@@ -1,0 +1,59 @@
+from aiogram import Bot, Dispatcher, types
+from aiogram import F
+from aiogram.filters.callback_data import CallbackData
+from aiogram.filters.command import Command
+from bs4 import BeautifulSoup
+from lxml.html.soupparser import fromstring
+from very_secret_info import *
+import requests
+import asyncio
+import logging
+
+
+# ------- settings ----------
+logging.basicConfig(level="INFO")  # TODO: когда допилим подключить к log.log
+
+bot = Bot(token=TOKEN)
+dp = Dispatcher()
+
+class MyCallBack(CallbackData, prefix='my'):
+    data: str
+# ---------------------------
+
+# ------- parsing (getting photos) -------
+#TODO: попросить папу выложить фотки и отпарсить их
+link = requests.get("https://novosibirsk.la-rose.ru/catalog/bukety-nedeli/")
+txt = BeautifulSoup(link.text, 'html.parser')
+elem = fromstring(str(txt))
+l = len(elem.xpath('//div[@class="item_block col-3 col-md-4 col-sm-6 col-xs-6 col-small-12"]/div'))
+for i in range(l):
+    pass # TODO: парсинг каждой фотки в своем контейнере
+
+# ----------------------------------------
+
+#-------- commands --------
+@dp.message(Command("start"))
+async def initialisation(message: types.Message):
+    button = types.InlineKeyboardButton(text="Подтвердить", callback_data=MyCallBack(data="accept").pack())
+    keyboard = types.InlineKeyboardMarkup(inline_keyboard=[[button]])  
+  
+    await message.answer(text='''Это бот La Rose
+Пожалуйста, подтвердите согласие на доступ к вашим персональным данным (username в телеграмм, номер телефона)''',
+                           reply_markup=keyboard)
+    
+@dp.callback_query(MyCallBack.filter(F.data == "accept"))
+async def answer_button(call: types.CallbackQuery):
+    await call.message.answer(text='''Спасибо!''')
+    await call.answer()
+    await call.message.answer(text='''Приветственное сообщение''')
+
+#--------------------------
+
+# ------- start polling----
+async def main():
+    await dp.start_polling(bot)  
+
+
+if __name__ == '__main__':
+    asyncio.run(main())
+# -------------------------
