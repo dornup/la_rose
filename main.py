@@ -22,12 +22,17 @@ class MyCallBack(CallbackData, prefix='my'):
 
 # ------- parsing (getting photos) -------
 #TODO: попросить папу выложить фотки и отпарсить их
-link = requests.get("https://novosibirsk.la-rose.ru/catalog/bukety-nedeli/")
-txt = BeautifulSoup(link.text, 'html.parser')
+site = requests.get("https://novosibirsk.la-rose.ru/catalog/bukety-nedeli/")
+txt = BeautifulSoup(site.text, 'html.parser')
 elem = fromstring(str(txt))
-l = len(elem.xpath('//div[@class="item_block col-3 col-md-4 col-sm-6 col-xs-6 col-small-12"]/div'))
-for i in range(l):
-    pass # TODO: парсинг каждой фотки в своем контейнере
+links = elem.xpath('//*[@class="thumb shine"]/img/@src')
+links = map(lambda x: "https://novosibirsk.la-rose.ru" + x , links)
+for i, link in enumerate(links):
+    img = requests.get(link)
+    if img.status_code == 200:
+        with open(f"images/{i}.jpg", 'wb') as file:
+            file.write(img.content)
+            logging.info(f"картинка {i} успешно скачана")
 
 # ----------------------------------------
 
