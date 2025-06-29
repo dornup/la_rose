@@ -4,7 +4,7 @@ from aiogram.filters.callback_data import CallbackData
 from aiogram.filters.command import Command
 from bs4 import BeautifulSoup
 from lxml.html.soupparser import fromstring
-from very_secret_info import *
+from secret import *
 import requests
 import asyncio
 import logging
