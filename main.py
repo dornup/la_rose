@@ -14,6 +14,8 @@ import requests
 import asyncio
 import logging
 import datetime
+from datetime import datetime, timedelta
+import pytz
 
 
 # ------- settings ----------
@@ -28,6 +30,12 @@ index = 0
 
 class MyCallBack(CallbackData, prefix='my'):
     data: str
+    number: str = ""
+    name: str = ""
+    phone: str = ""
+    adress: str = ""
+    date: str = ""
+    time: str = ""
 
 class Form(StatesGroup):
     number = State()
@@ -36,6 +44,8 @@ class Form(StatesGroup):
     adress = State()
     date = State()
     time = State()
+
+even_hours = [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 0]
 # ---------------------------
 
 # ------- parsing (getting photos) -------
@@ -91,7 +101,7 @@ async def catalog(call: types.CallbackQuery):
 @dp.callback_query(MyCallBack.filter(F.data == 'choose'))
 async def choose(call: types.CallbackQuery, state: FSMContext):
     await state.set_state(Form.number)
-    await call.message.answer(text=f'''Пожалуйста, введите цифру от {index-8} до {index}''')
+    await call.message.answer(text=f'''Пожалуйста, введите цифру от 1 до {index}''')
 
 @form_router.message(Form.number)
 async def name(message: types.Message, state: FSMContext):
@@ -117,29 +127,17 @@ async def phone(message: types.Message, state: FSMContext):
 @form_router.message(Form.phone)
 async def phone(message: types.Message, state: FSMContext):
     await state.update_data(phone = message.text)
-    button1 = types.InlineKeyboardButton(text='Ввести адрес', callback_data=MyCallBack(data='known_adress').pack())
-    button2 = types.InlineKeyboardButton(text='Адрес нужно уточнить по телефону', callback_data=MyCallBack(data='unknown_adress').pack())
-    keyboard = types.InlineKeyboardMarkup(inline_keyboard=[[button1, button2]])
-    await message.answer(f'''Хорошо, давайте определим, на какой адрес нужно отправить букет''', reply_markup=keyboard)
-
-@dp.callback_query(MyCallBack.filter(F.data == "known_adress"))
-async def known_adress(call: types.CallbackQuery, state: FSMContext):
     await state.set_state(Form.adress)
-    await call.message.answer(text='Введите адрес получателя в формате: улица, номер дома, квартира')
-
-@dp.callback_query(MyCallBack.filter(F.data == "unknown_adress"))
-async def unknown_adress(call: types.CallbackQuery, state: FSMContext):
-    await state.set_state(Form.adress)
-    button = types.KeyboardButton(text="Уточнить адрес у получателя")
+    button = types.KeyboardButton(text='Адрес нужно уточнить по телефону', callback_data=MyCallBack(data='unknown_adress').pack())
     keyboard = types.ReplyKeyboardMarkup(keyboard=[[button]])
-    await call.message.answer(text='Подтвердите, что адрес нужно уточнить по телефону', reply_markup=keyboard)
+    await message.answer(f'''Хорошо, давайте определим, на какой адрес нужно отправить букет. Введите адрес получателя в формате: улица, номер дома, квартира. Если вы не знаете адрес получателя, то нажмите на кнопку "Адрес нужно уточнить по телефону"''', reply_markup=keyboard)
 
 @form_router.message(Form.adress)
 async def date(message: types.Message, state: FSMContext):
     await state.update_data(adress = message.text)
     await state.set_state(Form.date)
-    start = datetime.datetime.today()
-    date_list = [(start.date() + datetime.timedelta(days=i)).strftime('%d.%m.%Y') for i in range(30)]
+    start = datetime.today()
+    date_list = [(start.date() + timedelta(days=i)).strftime('%d.%m.%Y') for i in range(30)]
     keyboard = ReplyKeyboardBuilder()
     for i, date in enumerate(date_list):
         button = types.KeyboardButton(text=date)
@@ -150,24 +148,69 @@ async def date(message: types.Message, state: FSMContext):
 @form_router.message(Form.date)
 async def time(message: types.Message, state: FSMContext):
     await state.update_data(date = message.text)
-    await state.set_state(time)
+    await state.set_state(Form.time)
     keyboard = ReplyKeyboardBuilder()
-    if message.text == datetime.datetime.today().strftime('%d.%m.%Y'):
-        print(datetime.time())
+    if message.text == datetime.today().strftime('%d.%m.%Y'):
+        time_now_str = datetime.now(pytz.timezone('Asia/Novosibirsk')).strftime('%H:%M')
+        hour, minutes = time_now_str.split(":")
+        hour = int(hour) if int(minutes) == 0 else int(hour) + 1
+        hour = hour + 1 if hour not in even_hours else hour
+        for i, h in enumerate(even_hours[even_hours.index(hour):12]):
+            button = types.KeyboardButton(text=f'{str(h).rjust(2, "0")}.00 - {str(even_hours[even_hours.index(hour):][(i+1)]).rjust(2, "0")}.00')
+            keyboard.add(button)
+    else:
+        for i, h in enumerate(even_hours[:12]):
+            button = types.KeyboardButton(text=f'{str(h).rjust(2, "0")}.00 - {str(even_hours[(i+1)]).rjust(2, "0")}.00')
+            keyboard.add(button)
+    keyboard.adjust(3)
+    await message.answer(text='Выберите, пожалуйста время доставки', reply_markup=keyboard.as_markup())
+    
+@form_router.message(Form.time)
+async def finish(message: types.Message, state: FSMContext):
+    data = await state.update_data(time = message.text)
+    print(data)
+    await state.clear()
+    await check(message, data)
 
-
-@dp.callback_query(MyCallBack.filter(F.data == 'admin'))
-async def admin(call: types.CallbackQuery, data: Dict[str, Any]):
+async def check(message: types.Message, data: Dict[str, Any]):
     number = data['number']
     name = data['name']
     phone = data['phone']
     adress = data['adress']
+    date = data['date']
     time = data['time']
-    bot.send_message(chat_id=-4873594805, text=f'''номер букета: {number}
+    button1 = types.InlineKeyboardButton(text='Все верно', callback_data=MyCallBack(data = "send", number=number, name=name, phone=phone, adress=adress, date=date, time=time).pack())
+    button2 = types.InlineKeyboardButton(text='Связаться с администратором', callback_data=MyCallBack(data = "wrong").pack())
+    keyboard = types.InlineKeyboardMarkup(inline_keyboard=[[button1, button2]])
+    mes = f'''
     имя: {name}
-    номер телефона: {phone}
-    адрес: {adress}
+    номер букета: {number}
+    номер телефона получателя: {phone}
+    адрес доставки: {adress}
+    дата доставки: {date}
+    время доставки: {time}'''
+    await message.answer(text=f'''Пожалуйста, проверьте, что все данные для заказа указаны корректно:''' + mes, reply_markup=keyboard)
+
+
+@dp.callback_query(MyCallBack.filter(F.data == 'send'))
+async def send(call: types.CallbackQuery, callback_data: dict):
+    data = callback_data.get('info')
+    number = data['number']
+    name = data['name']
+    phone = data['phone']
+    adress = data['adress']
+    date = data['date']
+    time = data['time']
+    await bot.send_message(chat_id=-4873594805, text=f'''имя: {name}
+    номер букета: {number}
+    номер телефона получателя: {phone}
+    адрес доставки: {adress}
+    дата доставки: {date}
     время доставки: {time}''')
+
+@dp.callback_query(MyCallBack.filter(F.data == 'wrong'))
+async def replace(call: types.CallbackQuery):
+    pass
 
 #--------------------------
 
